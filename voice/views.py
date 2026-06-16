@@ -292,5 +292,5 @@ def generate_panel_embed() -> discord.Embed:
     embed = discord.Embed(color=PANEL_COLOR)
     
     # Direct CDN link to the layout graphic image card
-    embed.set_image(url="https://cdn.discordapp.com/attachments/1477265845385298108/1503057688844566669/interface.png?ex=6a316d0e&is=6a301b8e&hm=0719e84806e5ac5c4a624eb8da2426658014ed7d862fc5344892fbc56c4c3266&")
+    embed.set_image(url="https://cdn.discordapp.com/attachments/1460996154279067711/1516288680426344649/3b5f55d2-96d8-4abd-bb87-b312b95374bd.png?ex=6a321960&is=6a30c7e0&hm=d631d4e8bfd5e789cc19e0aaaa88a27acf2a19b693da59b169eb5b507b5403db&")
     return embed
