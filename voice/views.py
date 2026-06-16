@@ -4,7 +4,8 @@ from typing import Optional
 from voice.controls import check_vc_ownership, apply_lock, apply_visibility, apply_user_override
 from database import fetch_one, fetch_all
 
-PANEL_COLOR = discord.Color.from_rgb(46, 139, 87) 
+# Deep blue color for the embed accent line matching the theme
+PANEL_COLOR = discord.Color.blue() 
 
 class VoiceLimitModal(discord.ui.Modal, title="Set Voice Channel User Limit"):
     limit_input = discord.ui.TextInput(label="User Limit (0-99, 0 for unlimited)", placeholder="Example: 5", max_length=2, required=True)
@@ -127,43 +128,43 @@ class VoiceControlPanelView(discord.ui.View):
             
         return v_channel # type: ignore
 
-    # --- ROW 1 ---
-    @discord.ui.button(emoji="🔒", style=discord.ButtonStyle.success, custom_id="panel_lock", row=0)
+    # --- ROW 1 (Lock, Unlock, Hide, Unhide) ---
+    @discord.ui.button(emoji="🔒", style=discord.ButtonStyle.primary, custom_id="panel_lock", row=0)
     async def lock_vc_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         channel = await self._resolve_context(interaction)
         if channel:
             await apply_lock(channel, True)
             await interaction.response.send_message("🔒 Session access secured. Unapproved users can no longer route entries.", ephemeral=True)
 
-    @discord.ui.button(emoji="🔓", style=discord.ButtonStyle.success, custom_id="panel_unlock", row=0)
+    @discord.ui.button(emoji="🔓", style=discord.ButtonStyle.primary, custom_id="panel_unlock", row=0)
     async def unlock_vc_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         channel = await self._resolve_context(interaction)
         if channel:
             await apply_lock(channel, False)
             await interaction.response.send_message("🔓 Room entries unlocked safely for open connection access routing.", ephemeral=True)
 
-    @discord.ui.button(emoji="🚪", style=discord.ButtonStyle.success, custom_id="panel_hide", row=0)
+    @discord.ui.button(emoji="🚪", style=discord.ButtonStyle.primary, custom_id="panel_hide", row=0)
     async def hide_vc_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         channel = await self._resolve_context(interaction)
         if channel:
             await apply_visibility(channel, True)
             await interaction.response.send_message("🙈 Visibility parameters updated. Channel is now hidden from the general server layout.", ephemeral=True)
 
-    @discord.ui.button(emoji="🪟", style=discord.ButtonStyle.success, custom_id="panel_unhide", row=0)
+    @discord.ui.button(emoji="🪟", style=discord.ButtonStyle.primary, custom_id="panel_unhide", row=0)
     async def unhide_vc_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         channel = await self._resolve_context(interaction)
         if channel:
             await apply_visibility(channel, False)
             await interaction.response.send_message("👁 Channel visibility restored across standard server structural trees.", ephemeral=True)
 
-    # --- ROW 2 ---
-    @discord.ui.button(emoji="📤", style=discord.ButtonStyle.success, custom_id="panel_kick", row=1)
+    # --- ROW 2 (Kick, Permit, Ban, Claim) ---
+    @discord.ui.button(emoji="📤", style=discord.ButtonStyle.primary, custom_id="panel_kick", row=1)
     async def kick_vc_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         channel = await self._resolve_context(interaction)
         if channel:
             await interaction.response.send_message("Select a target user to kick from this session:", view=DropdownWrapperView("KICK", channel), ephemeral=True)
 
-    @discord.ui.button(emoji="👤", style=discord.ButtonStyle.success, custom_id="panel_permit", row=1)
+    @discord.ui.button(emoji="👤", style=discord.ButtonStyle.primary, custom_id="panel_permit", row=1)
     async def permit_vc_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         channel = await self._resolve_context(interaction)
         if channel:
@@ -182,7 +183,7 @@ class VoiceControlPanelView(discord.ui.View):
             v.add_item(sel)
             await interaction.response.send_message("Choose target user context to white-list:", view=v, ephemeral=True)
 
-    @discord.ui.button(emoji="🚫", style=discord.ButtonStyle.success, custom_id="panel_ban", row=1)
+    @discord.ui.button(emoji="🚫", style=discord.ButtonStyle.primary, custom_id="panel_ban", row=1)
     async def ban_vc_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         channel = await self._resolve_context(interaction)
         if channel:
@@ -201,7 +202,7 @@ class VoiceControlPanelView(discord.ui.View):
             v.add_item(sel)
             await interaction.response.send_message("Choose target user context for localized explicit session lock ban:", view=v, ephemeral=True)
 
-    @discord.ui.button(emoji="👑", style=discord.ButtonStyle.success, custom_id="panel_claim", row=1)
+    @discord.ui.button(emoji="👑", style=discord.ButtonStyle.primary, custom_id="panel_claim", row=1)
     async def claim_vc_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         member = interaction.user
         if not isinstance(member, discord.Member) or not member.voice or not member.voice.channel:
@@ -215,7 +216,6 @@ class VoiceControlPanelView(discord.ui.View):
             return
 
         current_owner_id = track[0]
-        # Check if current owner is actually still in the VC
         owner_present = any(m.id == current_owner_id for m in v_channel.members)
         
         if owner_present:
@@ -223,14 +223,13 @@ class VoiceControlPanelView(discord.ui.View):
         else:
             from database import execute_query
             execute_query("UPDATE active_vcs SET owner_id = ? WHERE channel_id = ?", (member.id, v_channel.id))
-            # Grant channel manager permissions explicitly
             overwrites = v_channel.overwrites
             overwrites[member] = discord.PermissionOverwrite(manage_channels=True, move_members=True, mute_members=True, deafen_members=True)
             await v_channel.edit(overwrites=overwrites)
             await interaction.response.send_message("👑 Ownership successfully transferred! You now control this voice session.", ephemeral=False)
 
-    # --- ROW 3 ---
-    @discord.ui.button(emoji="📝", style=discord.ButtonStyle.success, custom_id="panel_rename", row=2)
+    # --- ROW 3 (Rename, Status, Bitrate, Limit) ---
+    @discord.ui.button(emoji="📝", style=discord.ButtonStyle.primary, custom_id="panel_rename", row=2)
     async def rename_vc_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         member = interaction.user
         if not isinstance(member, discord.Member) or not member.voice or not member.voice.channel:
@@ -243,7 +242,7 @@ class VoiceControlPanelView(discord.ui.View):
             
         await interaction.response.send_modal(VoiceRenameModal())
 
-    @discord.ui.button(emoji="📊", style=discord.ButtonStyle.success, custom_id="panel_status", row=2)
+    @discord.ui.button(emoji="📊", style=discord.ButtonStyle.primary, custom_id="panel_status", row=2)
     async def status_vc_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         member = interaction.user
         if not isinstance(member, discord.Member) or not member.voice or not member.voice.channel:
@@ -268,13 +267,13 @@ class VoiceControlPanelView(discord.ui.View):
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @discord.ui.button(emoji="🔊", style=discord.ButtonStyle.success, custom_id="panel_bitrate", row=2)
+    @discord.ui.button(emoji="🔊", style=discord.ButtonStyle.primary, custom_id="panel_bitrate", row=2)
     async def bitrate_vc_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         channel = await self._resolve_context(interaction)
         if channel:
             await interaction.response.send_message("Select an audio encoding bitrate metric for tracking allocation changes:", view=DropdownWrapperView("BITRATE", channel), ephemeral=True)
 
-    @discord.ui.button(emoji="👥", style=discord.ButtonStyle.success, custom_id="panel_limit", row=2)
+    @discord.ui.button(emoji="👥", style=discord.ButtonStyle.primary, custom_id="panel_limit", row=2)
     async def limit_vc_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         member = interaction.user
         if not isinstance(member, discord.Member) or not member.voice or not member.voice.channel:
@@ -289,9 +288,9 @@ class VoiceControlPanelView(discord.ui.View):
 
 
 def generate_panel_embed() -> discord.Embed:
-    # Minimalist Embed container with completely empty text parameters
+    # Completely empty description layout
     embed = discord.Embed(color=PANEL_COLOR)
     
-    # Direct link deployment mapped to the uploaded layout banner graphics image block
+    # Direct CDN link to the layout graphic image card
     embed.set_image(url="https://cdn.discordapp.com/attachments/1477265845385298108/1503057688844566669/interface.png?ex=6a316d0e&is=6a301b8e&hm=0719e84806e5ac5c4a624eb8da2426658014ed7d862fc5344892fbc56c4c3266&")
     return embed
