@@ -33,4 +33,5 @@ class ContextMemory:
         for k in keys_to_clear:
             self._memory[k] = []
 
-memory_manager = ContextMemory().
+# Instantiate the manager safely below the class layout
+memory_manager = ContextMemory()
