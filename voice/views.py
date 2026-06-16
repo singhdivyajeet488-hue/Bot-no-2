@@ -226,7 +226,8 @@ class VoiceControlPanelView(discord.ui.View):
             overwrites = v_channel.overwrites
             overwrites[member] = discord.PermissionOverwrite(manage_channels=True, move_members=True, mute_members=True, deafen_members=True)
             await v_channel.edit(overwrites=overwrites)
-            await interaction.response.send_message("👑 Ownership successfully transferred! You now control this voice session.", ephemeral=False)
+            # FIXED: Changed ephemeral=False to ephemeral=True so it sends privately to the user
+            await interaction.response.send_message("👑 Ownership successfully transferred! You now control this voice session.", ephemeral=True)
 
     # --- ROW 3 (Rename, Status, Bitrate, Limit) ---
     @discord.ui.button(emoji="📝", style=discord.ButtonStyle.primary, custom_id="panel_rename", row=2)
@@ -288,9 +289,6 @@ class VoiceControlPanelView(discord.ui.View):
 
 
 def generate_panel_embed() -> discord.Embed:
-    # Completely empty description layout
     embed = discord.Embed(color=PANEL_COLOR)
-    
-    # Direct CDN link to the layout graphic image card
-    embed.set_image(url="https://cdn.discordapp.com/attachments/1460996154279067711/1516288680426344649/3b5f55d2-96d8-4abd-bb87-b312b95374bd.png?ex=6a321960&is=6a30c7e0&hm=d631d4e8bfd5e789cc19e0aaaa88a27acf2a19b693da59b169eb5b507b5403db&")
+    embed.set_image(url="https://cdn.discordapp.com/attachments/1477265845385298108/1503057688844566669/interface.png?ex=6a316d0e&is=6a301b8e&hm=0719e84806e5ac5c4a624eb8da2426658014ed7d862fc5344892fbc56c4c3266&")
     return embed
