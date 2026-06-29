@@ -58,7 +58,16 @@ async def fetch_server_data(ip: str):
         return None, str(exc)
 
 
-def build_online_embed(ip: str, data: dict) -> tuple:
+def build_cooldown_bar(seconds_left: int, total: int = REFRESH_INTERVAL) -> str:
+    """Returns a visual progress bar + countdown label."""
+    filled = total - seconds_left
+    bar_len = 20
+    filled_blocks = round((filled / total) * bar_len)
+    bar = "█" * filled_blocks + "░" * (bar_len - filled_blocks)
+    return f"`[{bar}]` — Next refresh in **{seconds_left}s**"
+
+
+def build_online_embed(ip: str, data: dict, seconds_left: int) -> tuple:
     players_online = data.get("players", {}).get("online", 0)
     players_max    = data.get("players", {}).get("max", 0)
     version        = data.get("version", "Unknown")
@@ -81,6 +90,11 @@ def build_online_embed(ip: str, data: dict) -> tuple:
     embed.add_field(name="🎮  Version",   value=f"`{version}`",                       inline=True)
     embed.add_field(name="📝  MOTD",      value=f"```{motd}```",                      inline=False)
     embed.add_field(name="🟢  Status",    value="`Online`",                           inline=True)
+    embed.add_field(
+        name="🔄  Auto-Refresh",
+        value=build_cooldown_bar(seconds_left),
+        inline=False
+    )
 
     if favicon_file:
         embed.set_thumbnail(url="attachment://favicon.png")
@@ -88,8 +102,8 @@ def build_online_embed(ip: str, data: dict) -> tuple:
     return embed, favicon_file
 
 
-def build_offline_embed(ip: str) -> discord.Embed:
-    return discord.Embed(
+def build_offline_embed(ip: str, seconds_left: int) -> discord.Embed:
+    embed = discord.Embed(
         title="🔴  Server Offline",
         description=(
             f"**`{ip}`** is currently **offline** or unreachable.\n"
@@ -97,40 +111,77 @@ def build_offline_embed(ip: str) -> discord.Embed:
         ),
         color=EMBED_COLOR_OFF
     )
+    embed.add_field(
+        name="🔄  Auto-Refresh",
+        value=build_cooldown_bar(seconds_left),
+        inline=False
+    )
+    return embed
 
 
 # ─────────────────────────────────────────────
 #  Refresh loop — one per active status message
 # ─────────────────────────────────────────────
 class StatusRefresher:
-    """Runs a background loop that edits a channel message every 30 s."""
+    """
+    Runs a background loop that:
+      - Edits the embed with a live countdown every second
+      - Fetches fresh server data and rebuilds the embed every 30 s
+    """
 
-    def __init__(self, ip: str, channel: discord.TextChannel, message_id: int):
+    def __init__(self, ip: str, channel: discord.TextChannel, message_id: int,
+                 initial_data: dict | None):
         self.ip = ip
         self.channel = channel
         self.message_id = message_id
+        # Cache the last known server data so we can update the bar without re-fetching
+        self._last_data: dict | None = initial_data
+        self._last_online: bool = initial_data is not None and initial_data.get("online", False)
         self._task = asyncio.create_task(self._loop())
+
+    async def _edit_message(self, msg: discord.Message, seconds_left: int):
+        """Rebuild embed with updated countdown and edit the Discord message."""
+        if self._last_online and self._last_data:
+            embed, favicon_file = build_online_embed(self.ip, self._last_data, seconds_left)
+            if favicon_file:
+                await msg.edit(embed=embed, attachments=[favicon_file])
+            else:
+                await msg.edit(embed=embed, attachments=[])
+        else:
+            embed = build_offline_embed(self.ip, seconds_left)
+            await msg.edit(embed=embed, attachments=[])
 
     async def _loop(self):
         try:
             while True:
-                await asyncio.sleep(REFRESH_INTERVAL)
+                # ── One full 30-second cycle ──────────────────────────────
+                for seconds_left in range(REFRESH_INTERVAL, 0, -1):
+                    await asyncio.sleep(1)
+
+                    try:
+                        msg = await self.channel.fetch_message(self.message_id)
+                    except (discord.NotFound, discord.Forbidden):
+                        return  # message deleted — stop the loop
+
+                    await self._edit_message(msg, seconds_left)
+
+                # ── Time to refresh server data ───────────────────────────
                 try:
                     msg = await self.channel.fetch_message(self.message_id)
                 except (discord.NotFound, discord.Forbidden):
-                    break  # message deleted — stop
+                    return
 
                 data, error = await fetch_server_data(self.ip)
 
                 if error or data is None or not data.get("online", False):
-                    embed = build_offline_embed(self.ip)
-                    await msg.edit(embed=embed, attachments=[])
+                    self._last_online = False
+                    self._last_data = None
                 else:
-                    embed, favicon_file = build_online_embed(self.ip, data)
-                    if favicon_file:
-                        await msg.edit(embed=embed, attachments=[favicon_file])
-                    else:
-                        await msg.edit(embed=embed, attachments=[])
+                    self._last_online = True
+                    self._last_data = data
+
+                # Show full bar right after the fetch (30 s to next refresh)
+                await self._edit_message(msg, REFRESH_INTERVAL)
 
         except asyncio.CancelledError:
             pass
@@ -174,13 +225,13 @@ class ServerStatusCog(commands.Cog):
             ))
             return
 
-        online: bool = data.get("online", False)
+        online: bool = data.get("online", False) if data else False
 
         if not online:
-            embed = build_offline_embed(ip)
+            embed = build_offline_embed(ip, REFRESH_INTERVAL)
             webhook_msg = await interaction.followup.send(embed=embed, wait=True)
         else:
-            embed, favicon_file = build_online_embed(ip, data)
+            embed, favicon_file = build_online_embed(ip, data, REFRESH_INTERVAL)
             if favicon_file:
                 webhook_msg = await interaction.followup.send(embed=embed, file=favicon_file, wait=True)
             else:
@@ -189,11 +240,12 @@ class ServerStatusCog(commands.Cog):
         # Fetch the real Message object so we can edit it later
         real_msg = await interaction.channel.fetch_message(webhook_msg.id)
 
-        # Start background refresh
+        # Start background refresh with initial data cached
         refresher = StatusRefresher(
             ip=ip,
             channel=interaction.channel,
-            message_id=real_msg.id
+            message_id=real_msg.id,
+            initial_data=data if online else None,
         )
         self._refreshers.append(refresher)
 
